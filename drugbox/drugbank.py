@@ -13,7 +13,8 @@ def main():
     file_name = base_dir + "full database.xml" 
     #file_name = base_dir + "test.xml"
     out_file = base_dir + "targets.tsv" 
-    output_data(file_name, out_file)
+    #output_data(file_name, out_file)
+    output_target_info(file_name, out_file)
     return
     parser = DrugBankXMLParser(file_name)
     parser.parse()
@@ -234,7 +235,7 @@ class DrugBankXMLParser(object):
         return 
 
     
-    def get_targets(self, target_types = set(["target"]), only_paction=False):
+    def get_targets(self, target_types = set(["target"]), only_paction=False, include_details=False):
         # Map target ids to uniprot ids
         target_types = [self.NS + x for x in target_types]
         drug_to_uniprots = {}
@@ -246,7 +247,8 @@ class DrugBankXMLParser(object):
                 except:
                     # drug target has no uniprot
                     #print "No uniprot information for", target 
-                    continue
+                    if not include_details:
+                        continue
                 target_type, known, actions = values
                 flag = False
                 if only_paction:
@@ -256,7 +258,16 @@ class DrugBankXMLParser(object):
                     if target_type in target_types:
                         flag = True
                 if flag:
-                    drug_to_uniprots.setdefault(drug, set()).add(uniprot)
+                    if include_details:
+                        if target in self.target_to_gene:
+                            gene = self.target_to_gene[target]
+                        elif target in self.target_to_name:
+                            gene = "Name:" + self.target_to_name[target]
+                        else:
+                            gene = "N/A"
+                        drug_to_uniprots.setdefault(drug, set()).add((uniprot, gene, target_type[len(self.NS):], known, "|".join(actions)))
+                    else:
+                        drug_to_uniprots.setdefault(drug, set()).add(uniprot)
         return drug_to_uniprots
 
 
@@ -303,7 +314,7 @@ class DrugBankXMLParser(object):
         return selected_drugs
 
 
-def output_data(file_name, out_file, target_type_list = ["target", "enzyme", "carrier", "transporter"]):
+def get_parser(file_name):
     dump_file = file_name + ".pcl"
     if os.path.exists(dump_file):
         parser = pickle.load(open(dump_file, 'rb'))
@@ -311,6 +322,11 @@ def output_data(file_name, out_file, target_type_list = ["target", "enzyme", "ca
         parser = DrugBankXMLParser(file_name)
         parser.parse()
         pickle.dump(parser, open(dump_file, 'wb'))
+    return parser
+
+
+def output_data(file_name, out_file, target_type_list = ["target", "enzyme", "carrier", "transporter"]):
+    parser = get_parser(file_name)
     #target_type_list = ["target", "enzyme", "carrier", "transporter"]
     #for target_type in target_type_list:
     drug_to_uniprots = parser.get_targets(target_types = set(target_type_list), only_paction=False)
@@ -330,6 +346,23 @@ def output_data(file_name, out_file, target_type_list = ["target", "enzyme", "ca
             print(values)
     f.close()
     return
+
+
+def output_target_info(file_name, out_file):
+    parser = get_parser(file_name)
+    target_type_list = ["target", "enzyme", "carrier", "transporter"]
+    drug_to_uniprots = parser.get_targets(target_types = set(target_type_list), only_paction=False, include_details=True)
+    #print(len(drug_to_uniprots), list(drug_to_uniprots.items())[:3])
+    with open(out_file, 'w') as f:
+        f.write("Drugbank id\tName\tTarget\tType\tAction\n") 
+        for drug, vals in drug_to_uniprots.items():
+            name = parser.drug_to_name[drug]
+            #groups = parser.drug_to_groups[drug]
+            for uniprot, gene, target_type, known, action in vals:
+                values = [ drug, name ] 
+                values.extend([gene, target_type, action])
+                f.write("%s\n" % "\t".join(map(str, values)))
+    return 
 
 
 def get_drugs_by_group(parser, groups_to_include = set(["approved"]), groups_to_exclude=set(["withdrawn"])):
@@ -517,46 +550,6 @@ def get_drugbank_id_from_name(name, name_to_drug, synonym_to_drug, regex_db_name
                 drugbank_id = db_id
                 drugbank_name = db_name    
     return drugbank_id, drugbank_name 
-
-
-def get_drug_targets(file_name, drugs_file=None):
-    parser = DrugBankXMLParser(file_name)
-    parser.parse()
-    drugs = None
-    if drugs_file is not None:
-        drugs = set([ line.strip().lower() for line in open(drugs_file) ])
-        #exp = re.compile("brain")
-        #exp2 = re.compile("metastasis")
-        for drug, description in parser.drug_to_description.items():
-            #drug = drug.lower()
-            if description is None:
-                continue
-            #m = exp.search(description)
-            #m2 = exp2.search(description)
-            if True: # m is not None and m2 is not None:
-                drugs.add(drug)
-        for drug, indication in parser.drug_to_indication.items():
-            #drug = drug.lower()
-            if indication is None:
-                continue
-            #m = exp.search(indication)
-            #m2 = exp2.search(indication)
-            if True: # m is not None and m2 is not None:
-                drugs.add(drug)
-        #print drugs
-
-    drug_to_targets = {}
-    for drug, partner_ids in parser.drug_to_partner_ids.items():
-        #drug = drug.lower()
-        if drugs is not None and drug not in drugs: 
-            continue
-        #print drug
-        for partner_id in partner_ids:
-            gene = parser.partner_id_to_gene[partner_id]
-            if gene is None:
-                continue
-            drug_to_targets.setdefault(drug, set()).add(gene)
-    return drug_to_targets, parser.drug_to_description, parser.drug_to_indication
 
 
 if __name__ == "__main__":
