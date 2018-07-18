@@ -303,17 +303,16 @@ class DrugBankXMLParser(object):
         return selected_drugs
 
 
-def output_data(file_name, out_file):
+def output_data(file_name, out_file, target_type_list = ["target", "enzyme", "carrier", "transporter"]):
     dump_file = file_name + ".pcl"
     if os.path.exists(dump_file):
-        parser = pickle.load(open(dump_file))
+        parser = pickle.load(open(dump_file, 'rb'))
     else:
         parser = DrugBankXMLParser(file_name)
         parser.parse()
-        pickle.dump(parser, open(dump_file, 'w'))
+        pickle.dump(parser, open(dump_file, 'wb'))
     #target_type_list = ["target", "enzyme", "carrier", "transporter"]
     #for target_type in target_type_list:
-    target_type_list = ["target"]
     drug_to_uniprots = parser.get_targets(target_types = set(target_type_list), only_paction=False)
     f = open(out_file, 'w')
     f.write("Drugbank id\tName\tGroup\tTargets\n") 
@@ -322,7 +321,7 @@ def output_data(file_name, out_file):
     for drug, uniprots in drug_to_uniprots.items():
         name = parser.drug_to_name[drug]
         groups = parser.drug_to_groups[drug]
-        values = [ drug, name.encode("ascii", "replace") ]
+        values = [ drug, name ] # name.encode("ascii", "replace")
         values.append(" | ".join(groups))
         values.append(" | ".join(uniprots))
         try:
